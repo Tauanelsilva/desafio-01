@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import ValidationError
 from models import SearchRequest, SearchResponse
 from scraper import PortalTransparenciaScraper
@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 
 # Carrega variáveis do .env
 load_dotenv()
+
+# Token da API
+API_TOKEN = os.getenv("API_TOKEN")
 
 # Integração com Google (Parte 2)
 from google_integration import salvar_no_drive, atualizar_planilha
@@ -22,12 +25,28 @@ app = FastAPI(
 scraper_bot = PortalTransparenciaScraper()
 
 @app.post("/api/v1/buscar", response_model=SearchResponse, tags=["Scraper"])
-async def buscar_beneficiario(request: SearchRequest):
+async def buscar_beneficiario(
+    request: SearchRequest,
+    authorization: str = Header(None)
+):
     """
     Endpoint para buscar um beneficiário no Portal da Transparência pelo Nome, CPF ou NIS.
     O robô opera em background utilizando Playwright (headless).
     """
+
+    # Verificação do Bearer Token
+    if API_TOKEN:
+
+        expected_token = f"Bearer {API_TOKEN}"
+
+        if authorization != expected_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Token de autenticação inválido ou ausente."
+            )
+
     try:
+
         resultado = await scraper_bot.scrape(
             termo=request.termo,
             filtro=request.filtro
@@ -51,7 +70,7 @@ async def buscar_beneficiario(request: SearchRequest):
                 f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             )
 
-            # Salva o arquivo no Drive
+            # Salva o arquivo no Google Drive
             salvar_no_drive(json_data, filename)
 
             # Variáveis de ambiente
@@ -68,8 +87,9 @@ async def buscar_beneficiario(request: SearchRequest):
                 "Sucesso"
             ]
 
-            # Atualiza a planilha somente se existir ID configurado
+            # Atualiza planilha somente se existir ID configurado
             if SPREADSHEET_ID:
+
                 atualizar_planilha(
                     SPREADSHEET_ID,
                     RANGE_NAME,
@@ -79,6 +99,7 @@ async def buscar_beneficiario(request: SearchRequest):
         return response
 
     except Exception as e:
+
         raise HTTPException(
             status_code=500,
             detail=str(e)
@@ -89,6 +110,7 @@ def health_check():
     """
     Endpoint para verificação de saúde da API.
     """
+
     return {
         "status": "ok",
         "timestamp": datetime.datetime.now().isoformat()
