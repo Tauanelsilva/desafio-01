@@ -1,81 +1,170 @@
-import asyncio
 import base64
-from typing import Dict, Any
+from typing import Any, Dict
+
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from playwright.async_api import async_playwright
-from models import PersonData, BenefitDetail
+
+from models import BenefitDetail, PersonData
+
 
 class PortalTransparenciaScraper:
     def __init__(self):
         self.base_url = "https://portaldatransparencia.gov.br"
 
-    async def scrape(self, termo: str, filtro: str = "BENEFICIÁRIO DE PROGRAMA SOCIAL") -> Dict[str, Any]:
+    async def scrape(
+        self,
+        termo: str,
+        filtro: str = "BENEFICIÁRIO DE PROGRAMA SOCIAL"
+    ) -> Dict[str, Any]:
+
         async with async_playwright() as p:
-            # Lança o browser em modo headless
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context()
             page = await context.new_page()
 
             try:
-                # Acessa a página principal de busca
-                # Na prática, o Portal da Transparência redireciona as buscas, 
-                # vamos simular a navegação da forma mais estável: acessando a URL de busca diretamente
-                # O parâmetro 'termo' é passado na querystring.
-                search_url = f"{self.base_url}/busca?termo={termo}"
-                await page.goto(search_url, wait_until="networkidle")
+                await page.goto(
+                    f"{self.base_url}/pessoa/visao-geral",
+                    wait_until="domcontentloaded",
+                    timeout=60000
+                )
 
-                # Espera carregar os resultados. Se houver filtro, precisamos clicar nele.
-                # O filtro "Beneficiário de Programa Social" costuma aparecer na lateral
-                # Vamos tentar aplicar o filtro se ele existir na página
+                await page.wait_for_timeout(2000)
+
+                # Acessa a opção de Busca de Pessoa Física
+                botao_busca = page.get_by_role("link", name="Acessar busca").first
+                await botao_busca.click()
+                await page.wait_for_load_state("domcontentloaded")
+                await page.wait_for_timeout(2000)
+
+                # Preenche o campo de busca
+                campo_busca = page.locator("input").first
+                await campo_busca.fill(termo)
+
+                # Aplica filtro social, quando informado
                 if filtro:
                     try:
-                        # Busca por um botão/link que contenha o texto do filtro e clica
-                        filter_element = page.locator(f"text='{filtro}'").first
-                        if await filter_element.is_visible():
-                            await filter_element.click()
-                            await page.wait_for_load_state("networkidle")
-                    except Exception as e:
-                        print(f"Não foi possível aplicar o filtro: {e}")
+                        filtro_social = page.get_by_label("Beneficiário de Programa Social")
+                        await filtro_social.check()
+                    except Exception:
+                        pass
 
-                # Clica no primeiro resultado correspondente a uma pessoa física/jurídica
-                # Normalmente, os links têm uma classe específica ou estão dentro de h3/a
-                # Vamos tentar pegar o primeiro link relevante
-                first_result = page.locator("css=.resultados-busca a").first
-                if await first_result.is_visible():
-                    # Pega a URL do perfil
-                    profile_url = await first_result.get_attribute('href')
-                    if profile_url and not profile_url.startswith('http'):
-                        profile_url = self.base_url + profile_url
-                    
-                    # Vai para a página de perfil da pessoa
-                    await page.goto(profile_url, wait_until="networkidle")
-                else:
-                    # Se não achou de forma convencional, a busca pode não ter resultados
-                    pass
+                # Clica em consultar
+                await page.get_by_role("button", name="Consultar").click()
+                await page.wait_for_load_state("domcontentloaded")
+                await page.wait_for_timeout(3000)
 
-                # Tira o screenshot da página "Panorama da relação..."
+                texto_pagina = await page.text_content("body") or ""
+
+                # Tratamento de erro: nome inexistente
+                if "Foram encontrados 0 resultados" in texto_pagina:
+                    return {
+                        "sucesso": False,
+                        "dados": None,
+                        "imagem_base64": None,
+                        "mensagem": f"Foram encontrados 0 resultados para o termo {termo}."
+                    }
+
+                # Tratamento de erro: tempo de resposta
+                if "Não foi possível retornar os dados" in texto_pagina:
+                    return {
+                        "sucesso": False,
+                        "dados": None,
+                        "imagem_base64": None,
+                        "mensagem": "Não foi possível retornar os dados no tempo de resposta solicitado."
+                    }
+
+                # Tenta abrir o primeiro resultado clicável
+                links = page.locator("a")
+                total_links = await links.count()
+
+                abriu_resultado = False
+
+                for i in range(total_links):
+                    link_texto = await links.nth(i).inner_text()
+                    href = await links.nth(i).get_attribute("href")
+
+                    if href and (
+                        "/pessoa-fisica/" in href
+                        or "pessoa-fisica" in href
+                        or termo.lower() in link_texto.lower()
+                    ):
+                        await links.nth(i).click()
+                        abriu_resultado = True
+                        break
+
+                if not abriu_resultado:
+                    screenshot_bytes = await page.screenshot(full_page=True)
+                    base64_image = base64.b64encode(screenshot_bytes).decode("utf-8")
+
+                    return {
+                        "sucesso": False,
+                        "dados": None,
+                        "imagem_base64": base64_image,
+                        "mensagem": "Resultado encontrado, mas não foi possível abrir o primeiro registro automaticamente."
+                    }
+
+                await page.wait_for_load_state("domcontentloaded")
+                await page.wait_for_timeout(3000)
+
+                # Screenshot da tela de panorama
                 screenshot_bytes = await page.screenshot(full_page=True)
-                base64_image = base64.b64encode(screenshot_bytes).decode('utf-8')
+                base64_image = base64.b64encode(screenshot_bytes).decode("utf-8")
 
-                # Extrai dados básicos do panorama
-                panorama_data = {}
-                # Aqui buscaríamos os elementos de panorama (ex: .box-resumo)
-                box_resumos = await page.locator("css=.box-resumo").all_text_contents()
-                panorama_data['resumos'] = [b.strip() for b in box_resumos]
+                texto_pessoa = await page.text_content("body") or ""
 
-                # Extrai os benefícios (Auxílio Brasil, Auxílio Emergencial, Bolsa Família)
+                panorama_data = {
+                    "conteudo_pagina": texto_pessoa
+                }
+
                 beneficios_extraidos = []
-                # Exemplo: Procura acordions ou abas de benefícios
-                # (Lógica genérica pois o layout exato exigiria inspeção do DOM vivo)
-                secoes_beneficios = await page.locator("css=.secao-beneficio").all()
-                for secao in secoes_beneficios:
-                    nome = await secao.locator("css=h3").inner_text()
-                    detalhes = await secao.locator("css=.detalhes").inner_text()
-                    beneficios_extraidos.append(BenefitDetail(
-                        nome_beneficio=nome.strip(),
-                        detalhes={"info": detalhes.strip()}
-                    ))
 
-                # Se a lista estiver vazia por falta da classe correta, a API retornará o que conseguiu
+                beneficios_mapeados = [
+                    "Auxílio Brasil",
+                    "Auxílio Emergencial",
+                    "Bolsa Família"
+                ]
+
+                for beneficio in beneficios_mapeados:
+                    if beneficio.lower() in texto_pessoa.lower():
+                        beneficios_extraidos.append(
+                            BenefitDetail(
+                                nome_beneficio=beneficio,
+                                detalhes={
+                                    "encontrado_no_panorama": True
+                                }
+                            )
+                        )
+
+                # Tenta acessar botões/link de detalhamento
+                botoes_detalhar = page.get_by_role("link", name="Detalhar")
+                total_detalhar = await botoes_detalhar.count()
+
+                for i in range(total_detalhar):
+                    try:
+                        await botoes_detalhar.nth(i).click()
+                        await page.wait_for_load_state("domcontentloaded")
+                        await page.wait_for_timeout(2000)
+
+                        texto_detalhe = await page.text_content("body") or ""
+
+                        beneficios_extraidos.append(
+                            BenefitDetail(
+                                nome_beneficio=f"Benefício detalhado {i + 1}",
+                                detalhes={
+                                    "conteudo_detalhado": texto_detalhe
+                                }
+                            )
+                        )
+
+                        await page.go_back()
+                        await page.wait_for_load_state("domcontentloaded")
+                        await page.wait_for_timeout(2000)
+
+                        botoes_detalhar = page.get_by_role("link", name="Detalhar")
+
+                    except Exception:
+                        continue
 
                 person_data = PersonData(
                     panorama=panorama_data,
@@ -89,21 +178,30 @@ class PortalTransparenciaScraper:
                     "mensagem": "Busca realizada com sucesso."
                 }
 
+            except PlaywrightTimeoutError:
+                return {
+                    "sucesso": False,
+                    "dados": None,
+                    "imagem_base64": None,
+                    "mensagem": "Não foi possível retornar os dados no tempo de resposta solicitado."
+                }
+
             except Exception as e:
-                # Tira um screenshot do erro para debug, se possível
-                error_screenshot = ""
+                error_screenshot = None
+
                 try:
-                    screenshot_bytes = await page.screenshot()
-                    error_screenshot = base64.b64encode(screenshot_bytes).decode('utf-8')
-                except:
+                    screenshot_bytes = await page.screenshot(full_page=True)
+                    error_screenshot = base64.b64encode(screenshot_bytes).decode("utf-8")
+                except Exception:
                     pass
 
                 return {
                     "sucesso": False,
                     "dados": None,
-                    "imagem_base64": error_screenshot or None,
-                    "mensagem": f"Erro durante a execução do scraper: {str(e)}"
+                    "imagem_base64": error_screenshot,
+                    "mensagem": f"Erro durante a execução do scraper: {repr(e)}"
                 }
+
             finally:
                 await context.close()
                 await browser.close()
