@@ -1,8 +1,11 @@
 import datetime
+import logging
 import os
+import uuid
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from google_integration import atualizar_planilha, salvar_no_drive
 from models import SearchRequest, SearchResponse
@@ -10,9 +13,13 @@ from scraper import PortalTransparenciaScraper
 
 load_dotenv()
 
+# Configuração de logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
 API_TOKEN = os.getenv("API_TOKEN")
 SPREADSHEET_ID = os.getenv("GOOGLE_SPREADSHEET_ID")
-SHEETS_RANGE = os.getenv("GOOGLE_SHEETS_RANGE", "Pagina1!A:C")
+SHEETS_RANGE = os.getenv("GOOGLE_SHEETS_RANGE", "Pagina1!A:E")
 
 app = FastAPI(
     title="API Robô RPA - Portal da Transparência",
@@ -20,7 +27,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
-scraper_bot = PortalTransparenciaScraper()
+# Adiciona CORS para permitir consumo por workflows low-code
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def validar_token(authorization: str | None):
@@ -33,6 +47,7 @@ def validar_token(authorization: str | None):
     expected_token = f"Bearer {API_TOKEN}"
 
     if authorization != expected_token:
+        logger.warning("Tentativa de acesso com token inválido ou ausente.")
         raise HTTPException(
             status_code=401,
             detail="Token de autenticação inválido ou ausente."
@@ -47,8 +62,12 @@ async def buscar_beneficiario(
     """
     Busca um beneficiário no Portal da Transparência por Nome, CPF ou NIS.
     """
-
     validar_token(authorization)
+    identificador_unico = str(uuid.uuid4())
+    logger.info(f"[{identificador_unico}] Recebida requisição de busca para o termo: {request.termo}")
+
+    # Instanciamos o bot por requisição para garantir segurança em execuções simultâneas
+    scraper_bot = PortalTransparenciaScraper()
 
     try:
         resultado = await scraper_bot.scrape(
@@ -56,56 +75,52 @@ async def buscar_beneficiario(
             filtro=request.filtro
         )
 
-        response = SearchResponse(
-            sucesso=resultado.get("sucesso", False),
-            dados=resultado.get("dados"),
-            imagem_base64=resultado.get("imagem_base64"),
-            mensagem=resultado.get("mensagem")
-        )
+        if not resultado.get("sucesso"):
+            logger.info(f"[{identificador_unico}] Busca falhou: {resultado.get('mensagem')}")
+            return SearchResponse(**resultado)
 
-        if response.sucesso:
-            json_data = response.model_dump_json()
+        # Prepara a gravação do JSON
+        json_data = SearchResponse(**resultado).model_dump_json()
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # O desafio exige: [IDENTIFICADOR_UNICO]_[DATA_HORA].json
+        filename = f"{identificador_unico}_{timestamp}.json"
 
-            filename = (
-                f"{request.termo.replace(' ', '_')}_"
-                f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        # Hiperautomação interna: Salva no Google Drive e Planilhas
+        file_id = salvar_no_drive(json_data, filename)
+        drive_link = ""
+
+        if file_id and SPREADSHEET_ID:
+            drive_link = f"https://drive.google.com/file/d/{file_id}/view"
+            # O desafio pede: Identificador único, Nome, CPF, data/hora, link do Drive
+            dados_planilha = [identificador_unico, request.termo, timestamp, drive_link]
+            atualizar_planilha(
+                SPREADSHEET_ID,
+                SHEETS_RANGE,
+                dados_planilha
             )
 
-            drive_file_id = salvar_no_drive(json_data, filename)
-
-            if SPREADSHEET_ID:
-                row_data = [
-                    request.termo,
-                    datetime.datetime.now().isoformat(),
-                    "Sucesso",
-                    drive_file_id or "Não enviado ao Drive"
-                ]
-
-                atualizar_planilha(
-                    SPREADSHEET_ID,
-                    SHEETS_RANGE,
-                    row_data
-                )
-
-        return response
+        logger.info(f"[{identificador_unico}] Requisição processada com sucesso.")
+        return SearchResponse(**resultado)
 
     except HTTPException:
         raise
 
     except Exception as e:
+        logger.exception(f"[{identificador_unico}] Erro interno na API")
         raise HTTPException(
             status_code=500,
-            detail=f"Erro interno na API: {repr(e)}"
+            detail=f"Erro interno na automação: {str(e)}"
         )
 
 
-@app.get("/health", tags=["Health"])
-def health_check():
+@app.get("/health", tags=["Status"])
+async def health_check():
     """
-    Verifica se a API está ativa.
+    Retorna o status da API.
     """
-
     return {
-        "status": "ok",
-        "timestamp": datetime.datetime.now().isoformat()
+        "status": "API online",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "version": "1.0.0"
     }

@@ -29,32 +29,29 @@ class BenefitDetail(BaseModel):
 class PersonData(BaseModel):
     panorama: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Dados do panorama da pessoa"
+        description="Dados do panorama geral do beneficiário"
     )
 
-    beneficios: List[BenefitDetail] = Field(
+    beneficios: List[Dict[str, Any]] = Field(
         default_factory=list,
-        description="Lista de benefícios encontrados"
+        description="Lista de benefícios associados"
     )
 
 
 class SearchResponse(BaseModel):
     sucesso: bool = Field(
         ...,
-        description="Indica se a busca foi bem sucedida"
+        description="Indica se a busca foi realizada com sucesso"
     )
-
-    dados: Optional[PersonData] = Field(
+    dados: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Dados coletados da pessoa"
+        description="Dados do beneficiário e benefícios"
     )
-
     imagem_base64: Optional[str] = Field(
         default=None,
-        description="Screenshot da página em Base64"
+        description="Screenshot da tela em base64"
     )
-
-    mensagem: Optional[str] = Field(
-        default=None,
-        description="Mensagem de retorno da API"
+    mensagem: str = Field(
+        ...,
+        description="Mensagem descritiva do resultado da busca"
     )

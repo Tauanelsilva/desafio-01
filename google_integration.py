@@ -1,15 +1,20 @@
-import os
+import io
 import json
+import logging
+import os
+
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
-import io
+
+logger = logging.getLogger(__name__)
 
 # SCOPES necessários para o Drive e Sheets
 SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/spreadsheets']
 
-# Nome do arquivo de credenciais
-CREDENTIALS_FILE = 'credentials.json'
+# Nome do arquivo de credenciais (pode ser sobrescrito via ENV)
+CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
+
 
 def _get_credentials():
     """Obtém as credenciais da conta de serviço (se existir o arquivo)."""
@@ -18,11 +23,12 @@ def _get_credentials():
             CREDENTIALS_FILE, scopes=SCOPES)
     return None
 
-def salvar_no_drive(json_data: str, filename: str) -> str:
+
+def salvar_no_drive(json_data: str, filename: str) -> str | None:
     """Faz o upload do JSON para o Google Drive e retorna o ID do arquivo."""
     creds = _get_credentials()
     if not creds:
-        print("Arquivo credentials.json não encontrado. Upload para o Drive ignorado.")
+        logger.warning(f"Arquivo {CREDENTIALS_FILE} não encontrado. Upload para o Drive ignorado.")
         return None
 
     try:
@@ -31,17 +37,19 @@ def salvar_no_drive(json_data: str, filename: str) -> str:
         media = MediaIoBaseUpload(io.BytesIO(json_data.encode('utf-8')), mimetype='application/json', resumable=True)
         
         file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        print(f"Arquivo salvo no Drive com ID: {file.get('id')}")
-        return file.get('id')
+        file_id = file.get('id')
+        logger.info(f"Arquivo salvo no Drive com sucesso. ID: {file_id}")
+        return file_id
     except Exception as e:
-        print(f"Erro ao salvar no Drive: {e}")
+        logger.error(f"Erro ao salvar no Drive: {e}")
         return None
 
-def atualizar_planilha(spreadsheet_id: str, range_name: str, row_data: list):
+
+def atualizar_planilha(spreadsheet_id: str, range_name: str, row_data: list) -> bool:
     """Adiciona uma nova linha com os dados (row_data) no Google Sheets."""
     creds = _get_credentials()
     if not creds:
-        print("Arquivo credentials.json não encontrado. Atualização do Sheets ignorada.")
+        logger.warning(f"Arquivo {CREDENTIALS_FILE} não encontrado. Atualização do Sheets ignorada.")
         return False
 
     try:
@@ -55,8 +63,10 @@ def atualizar_planilha(spreadsheet_id: str, range_name: str, row_data: list):
             valueInputOption='USER_ENTERED',
             body=body
         ).execute()
-        print(f"Planilha atualizada: {result.get('updates').get('updatedCells')} células.")
+        
+        updates = result.get('updates', {}).get('updatedCells', 0)
+        logger.info(f"Planilha atualizada com sucesso: {updates} células modificadas.")
         return True
     except Exception as e:
-        print(f"Erro ao atualizar planilha: {e}")
+        logger.error(f"Erro ao atualizar planilha: {e}")
         return False

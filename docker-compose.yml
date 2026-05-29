@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - API_TOKEN=seu_token_aqui
+      - GOOGLE_SPREADSHEET_ID=
+    volumes:
+      - .:/app
+    # Descomente a linha abaixo para montar o arquivo de credenciais
+    # - ./credentials.json:/app/credentials.json:ro

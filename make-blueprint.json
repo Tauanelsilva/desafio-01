@@ -1,0 +1,90 @@
+{
+    "name": "Hiperautomação - RPA Portal Transparência",
+    "flow": [
+        {
+            "id": 1,
+            "module": "webhook:CustomWebhook",
+            "version": 1,
+            "parameters": {
+                "hook": "webhook-id-here"
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 2,
+            "module": "http:ActionMakeRequest",
+            "version": 3,
+            "parameters": {
+                "url": "https://sua-api.com/api/v1/buscar",
+                "method": "POST",
+                "headers": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{1.token}}"
+                    }
+                ],
+                "bodyType": "raw",
+                "parseResponse": true
+            },
+            "mapper": {
+                "body": "{\"termo\": \"{{1.termo}}\", \"filtro\": \"{{1.filtro}}\"}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "google-drive:ActionUploadAFile",
+            "version": 1,
+            "parameters": {
+                "destination": "drive",
+                "folderId": "your-folder-id"
+            },
+            "mapper": {
+                "fileName": "{{1.termo}}_{{formatDate(now; 'YYYYMMDD_HHmmss')}}.json",
+                "data": "{{2.data}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "google-sheets:ActionAddARow",
+            "version": 1,
+            "parameters": {
+                "spreadsheetId": "your-spreadsheet-id",
+                "sheet": "Pagina1"
+            },
+            "mapper": {
+                "values": [
+                    "{{1.termo}}",
+                    "{{formatDate(now; 'YYYY-MM-DD HH:mm:ss')}}",
+                    "{{3.webViewLink}}"
+                ]
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 0
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "version": 1
+    }
+}
