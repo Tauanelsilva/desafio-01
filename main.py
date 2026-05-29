@@ -4,8 +4,10 @@ import os
 import uuid
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.concurrency import run_in_threadpool
 
 from google_integration import atualizar_planilha, salvar_no_drive
 from models import SearchRequest, SearchResponse
@@ -36,33 +38,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+security = HTTPBearer(auto_error=False)
 
-def validar_token(authorization: str | None):
+def validar_token(credentials: HTTPAuthorizationCredentials | None):
     """
     Valida o token Bearer caso API_TOKEN esteja configurado no ambiente.
     """
     if not API_TOKEN:
         return
 
-    expected_token = f"Bearer {API_TOKEN}"
-
-    if authorization != expected_token:
+    if not credentials or credentials.credentials != API_TOKEN:
         logger.warning("Tentativa de acesso com token inválido ou ausente.")
         raise HTTPException(
             status_code=401,
             detail="Token de autenticação inválido ou ausente."
         )
 
-
 @app.post("/api/v1/buscar", response_model=SearchResponse, tags=["Scraper"])
 async def buscar_beneficiario(
     request: SearchRequest,
-    authorization: str | None = Header(default=None)
+    credentials: HTTPAuthorizationCredentials | None = Depends(security)
 ):
     """
     Busca um beneficiário no Portal da Transparência por Nome, CPF ou NIS.
     """
-    validar_token(authorization)
+    validar_token(credentials)
     identificador_unico = str(uuid.uuid4())
     logger.info(f"[{identificador_unico}] Recebida requisição de busca para o termo: {request.termo}")
 
@@ -86,15 +86,16 @@ async def buscar_beneficiario(
         # O desafio exige: [IDENTIFICADOR_UNICO]_[DATA_HORA].json
         filename = f"{identificador_unico}_{timestamp}.json"
 
-        # Hiperautomação interna: Salva no Google Drive e Planilhas
-        file_id = salvar_no_drive(json_data, filename)
+        # Hiperautomação interna: Salva no Google Drive e Planilhas em threadpool (não-bloqueante)
+        file_id = await run_in_threadpool(salvar_no_drive, json_data, filename)
         drive_link = ""
 
         if file_id and SPREADSHEET_ID:
             drive_link = f"https://drive.google.com/file/d/{file_id}/view"
             # O desafio pede: Identificador único, Nome, CPF, data/hora, link do Drive
             dados_planilha = [identificador_unico, request.termo, timestamp, drive_link]
-            atualizar_planilha(
+            await run_in_threadpool(
+                atualizar_planilha,
                 SPREADSHEET_ID,
                 SHEETS_RANGE,
                 dados_planilha

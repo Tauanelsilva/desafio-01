@@ -156,7 +156,13 @@ class PortalTransparenciaScraper:
                         await page.wait_for_load_state("domcontentloaded")
                         await page.wait_for_timeout(2000)
 
-                        detalhe = await page.text_content("body") or ""
+                        # Tenta focar no conteúdo principal, fallback para o body
+                        conteudo_locator = page.locator("main, #conteudo, .container").first
+                        if await conteudo_locator.count() > 0:
+                            detalhe = await conteudo_locator.text_content() or ""
+                        else:
+                            detalhe = await page.text_content("body") or ""
+                            
                         # Limpa quebras de linha e excesso de espaços no detalhe
                         detalhe_limpo = " ".join(detalhe.split())
                         
