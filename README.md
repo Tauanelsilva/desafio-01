@@ -1,134 +1,153 @@
-# Desafio Full Stack Developer - RPA e Hiperautomação
+<div align="center">
 
-## Sobre o projeto
+# 🤖 Transparência RPA API
 
-Este projeto é uma solução de automação RPA desenvolvida em Python para consultar informações no Portal da Transparência de forma automatizada.
+**Automated RPA solution for Brazil's Transparency Portal**
 
-A aplicação expõe uma API REST com FastAPI, executa a navegação automatizada com Playwright em modo headless e retorna os dados em formato JSON, incluindo uma captura da página convertida em Base64. Além da automação principal, o projeto possui uma estrutura desenhada e documentada para **Hiperautomação (Parte 2 do Desafio)**, pronta para integração em plataformas low-code como Make.com e n8n, utilizando APIs externas como Google Drive e Google Sheets.
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
+![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=flat-square&logo=playwright&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)
 
----
+*API de automação RPA desenvolvida com Python, FastAPI e Playwright para busca automatizada no Portal da Transparência do Governo Federal.*
 
-## 🛠️ Decisões Técnicas
+[Getting Started](#-como-executar) · [Architecture](#-arquitetura-do-projeto) · [API Docs](#-cenários-de-teste) · [Hyperautomation](#-parte-2-hiperautomação)
 
-1. **Uso de FastAPI:** Escolhido pela alta performance, suporte nativo a `async/await` e autogeração de documentação Swagger/OpenAPI.
-2. **Playwright:** Preferido sobre o Selenium por ser mais rápido, possuir melhor suporte assíncrono e abstrair automaticamente esperas dinâmicas do DOM.
-3. **Instanciação por Requisição (Concorrência):** O `PortalTransparenciaScraper` é instanciado a cada requisição. O Playwright gerencia múltiplos browser contexts separadamente, permitindo *execuções simultâneas* sem sobreposição de estado, o que foi um requisito central.
-4. **Resiliência e Fallbacks:** Foram implementados fallbacks nos seletores (ex: tentar localizar botões por nome, e se falhar, acessar via URL direta) para evitar que atualizações simples na interface do Governo quebrem o robô.
-5. **UUID como Identificador:** Adição de `uuid4` como identificador único para cada execução, formatando o nome do arquivo exatamente como exigido: `[IDENTIFICADOR_UNICO]_[DATA_HORA].json`.
-6. **Docker:** Configuração do ambiente via Dockerfile para garantir consistência entre ambientes e facilitar o deploy da API online.
-
----
-
-## ⚠️ Desafios Enfrentados
-
-- **Concorrência do Playwright no FastAPI:** Garantir que múltiplas chamadas simultâneas à API não causassem bloqueios. Foi resolvido utilizando `async with async_playwright()` dentro do escopo da requisição, criando browsers e contexts isolados.
-- **Instabilidade e Lentidão do Portal:** O Portal da Transparência pode ser intermitente ou lento. Isso foi contornado com *timeouts* extensivos (60s) e tratamento de erros explícito retornando mensagens claras em JSON em vez de travar o servidor.
-- **Identificação de Elementos Variáveis:** Diversas classes e seletores no Portal não são fixos (mudam com base na navegação). A solução foi usar múltiplos seletores CSS `.card, .box-resumo, section` e localização baseada em texto para máxima flexibilidade.
+</div>
 
 ---
 
-## Objetivo
+## 📋 About
 
-Automatizar a busca de beneficiários no Portal da Transparência, estruturando os dados retornados por meio de uma API que pode ser consumida por outros sistemas, workflows low-code ou ferramentas de automação.
+This project automates beneficiary lookups on Brazil's [Portal da Transparência](https://portaldatransparencia.gov.br/) through a REST API. It uses **Playwright** for headless browser automation and **FastAPI** as the async web framework, returning structured JSON data including Base64-encoded page screenshots.
+
+The solution also includes a **Hyperautomation** module designed for integration with low-code platforms like Make.com and n8n, enabling end-to-end workflows with Google Drive and Google Sheets.
+
+### ✨ Key Features
+
+- 🔍 **Automated Search** — CPF, NIS, or name-based lookups on the Transparency Portal
+- ⚡ **Async & Concurrent** — Isolated browser contexts per request for parallel execution
+- 📸 **Evidence Capture** — Base64-encoded screenshots for audit trails
+- 🛡️ **Resilient** — Fallback selectors and extended timeouts for portal instability
+- 🐳 **Docker Ready** — One-command deployment with Docker Compose
+- 🔄 **Hyperautomation** — Ready-to-import Make.com blueprint for Google Drive/Sheets integration
 
 ---
 
-## Tecnologias utilizadas
+## 🛠️ Tech Stack
 
-* **Python 3.11+**
-* **FastAPI** (Servidor Web Assíncrono)
-* **Playwright** (Navegação Automatizada)
-* **Pydantic** (Validação de Modelos)
-* **Google API Client** (Drive e Sheets - via código ou via Hyperautomação)
-* **Docker & Docker Compose**
+| Category | Technology |
+|:---------|:-----------|
+| **Language** | Python 3.11+ |
+| **Framework** | FastAPI (async) |
+| **Automation** | Playwright (Chromium, headless) |
+| **Validation** | Pydantic |
+| **Integration** | Google Drive & Sheets API |
+| **Deployment** | Docker & Docker Compose |
+| **Documentation** | Swagger/OpenAPI (auto-generated) |
 
 ---
 
-## Arquitetura do projeto
+## 🏗️ Arquitetura do Projeto
 
-```text
-.
-├── main.py                  # Aplicação FastAPI e endpoints
-├── scraper.py               # Robô RPA com Playwright
-├── models.py                # Modelos Pydantic de requisição e resposta
-├── google_integration.py    # Módulo complementar de integração com Google APIs
-├── requirements.txt         # Dependências do projeto
-├── Dockerfile               # Configuração do container Docker
-├── docker-compose.yml       # Orquestração do serviço
-├── make-blueprint.json      # Exemplo de Workflow (Parte 2 - Make.com)
-└── README.md                # Documentação
+```
+├── main.py                  # FastAPI app & endpoints
+├── scraper.py               # RPA bot with Playwright
+├── models.py                # Pydantic request/response models
+├── google_integration.py    # Google APIs integration module
+├── requirements.txt         # Python dependencies
+├── Dockerfile               # Container configuration
+├── docker-compose.yml       # Service orchestration
+├── make-blueprint.json      # Make.com workflow blueprint
+└── README.md                # Documentation
 ```
 
 ---
 
-## Como executar localmente
+## 🚀 Como Executar
 
-### 🐳 Via Docker (Recomendado)
+### 🐳 Via Docker (Recommended)
 
-O uso de Docker garante que todas as dependências de sistema do Playwright (Chromium) funcionem corretamente.
+```bash
+# 1. Clone the repository
+git clone https://github.com/Tauanelsilva/desafio-01.git
+cd desafio-01
 
-1. Clone o repositório.
-2. Crie seu arquivo `.env` baseado no `.env.example`.
-3. Execute o comando:
-   ```bash
-   docker-compose up --build
-   ```
-4. A API estará disponível em: `http://localhost:8000/docs`
+# 2. Configure environment
+cp .env.example .env
 
-### 💻 Via Instalação Manual
+# 3. Build and run
+docker-compose up --build
+```
 
-1. Clone o repositório.
-2. Crie e ative um ambiente virtual:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # ou venv\Scripts\activate no Windows
-   ```
-3. Instale as dependências:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Instale o navegador do Playwright:
-   ```bash
-   playwright install chromium
-   ```
-5. Rode a API:
-   ```bash
-   uvicorn main:app --reload
-   ```
+The API will be available at: `http://localhost:8000/docs`
 
----
+### 💻 Manual Installation
 
-## ⚡ Parte 2: Hiperautomação (Workflow)
+```bash
+# 1. Clone and enter directory
+git clone https://github.com/Tauanelsilva/desafio-01.git
+cd desafio-01
 
-Para a Parte 2, foi disponibilizado um *Blueprint* pronto (arquivo `make-blueprint.json`) que pode ser importado na plataforma **Make.com**.
+# 2. Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-### Fluxo do Workflow:
-1. **Webhook (Início):** O workflow é engatilhado via requisição HTTP externa.
-2. **Action API RPA:** O Make faz uma requisição POST na nossa API FastAPI desenvolvida na Parte 1.
-3. **Upload Google Drive:** O Make recebe o JSON da nossa API, o salva com o nome `[IDENTIFICADOR_UNICO]_[DATA_HORA].json` e sobe para o Google Drive.
-4. **Insert Google Sheets:** O Make pega o link direto gerado pelo passo anterior e adiciona uma nova linha no Google Sheets com as colunas: `ID, Nome/CPF, Data, Link do Drive`.
+# 3. Install dependencies
+pip install -r requirements.txt
 
-> **Nota:** Caso o avaliador prefira testar o fluxo diretamente pelo código (sem o Make.com), a própria API possui as chamadas do módulo `google_integration.py` integradas internamente. Basta adicionar o arquivo `credentials.json` na raiz do projeto e configurar as variáveis no `.env`.
+# 4. Install Playwright browser
+playwright install chromium
+
+# 5. Start the API
+uvicorn main:app --reload
+```
 
 ---
 
-## 🧪 Cenários de Teste e Validação
+## 🧪 Cenários de Teste
 
-Você pode testar a API através do Swagger na rota `/docs`.
+Test the API through the Swagger UI at `/docs`:
 
-| Cenário | Entrada | Resultado Esperado e Implementado |
-| :--- | :--- | :--- |
-| **Sucesso (CPF/NIS)** | CPF ou NIS válido | `sucesso: true`, JSON completo com todos os benefícios detalhados e evidência da tela (Base64). |
-| **Erro (Inexistente)** | CPF ou NIS falso/inexistente | `sucesso: false`, mensagem "Foram encontrados 0 resultados...". |
-| **Sucesso (Nome)** | Nome completo | Acessa e coleta os dados do **primeiro resultado** equivalente exibido pelo portal. |
-| **Filtrado** | Sobrenome + Filtro Marcado | Aplica o checklist "Beneficiário de Programa Social", e coleta os dados. |
+| Scenario | Input | Expected Result |
+|:---------|:------|:----------------|
+| ✅ **Success (CPF/NIS)** | Valid CPF or NIS | `success: true`, full JSON with benefits + screenshot |
+| ❌ **Not Found** | Invalid CPF/NIS | `success: false`, "0 results found" message |
+| ✅ **Success (Name)** | Full name | Fetches data from the first matching result |
+| 🔍 **Filtered** | Surname + filter | Applies "Social Program Beneficiary" filter |
 
 ---
 
-## Boas Práticas Implementadas
+## ⚡ Parte 2: Hiperautomação
 
-* **Separação de Responsabilidades:** API isolada da lógica de Scraping e Integrações.
-* **Logging Estruturado:** Uso de `logging` no lugar de `print()` para rastreabilidade de requisições.
-* **Middlewares de Segurança:** Implementação de Validação de Token Bearer e CORS.
-* **Concorrência:** Scraping encapsulado garantindo execuções simultâneas eficientes.
-* **Documentação:** API totalmente documentada via Swagger/OpenAPI nativo do FastAPI.
+The `make-blueprint.json` file can be imported into **Make.com** for end-to-end automation:
+
+```
+Webhook → API RPA Call → Google Drive Upload → Google Sheets Log
+```
+
+1. **Webhook** triggers the workflow via HTTP request
+2. **API Call** sends POST to the FastAPI endpoint
+3. **Google Drive** saves the JSON response as `[UUID]_[DATETIME].json`
+4. **Google Sheets** logs a new row with: `ID, Name/CPF, Date, Drive Link`
+
+> 💡 The `google_integration.py` module also supports direct API calls without Make.com.
+
+---
+
+## 🔧 Technical Decisions
+
+| Decision | Rationale |
+|:---------|:----------|
+| **FastAPI** | High performance, native async/await, auto-generated Swagger docs |
+| **Playwright over Selenium** | Faster, better async support, automatic DOM wait handling |
+| **Instance per Request** | Isolated browser contexts prevent state overlap in concurrent execution |
+| **Fallback Selectors** | Multiple CSS selectors + text-based location for portal UI changes |
+| **UUID Identifiers** | Unique execution IDs following `[UUID]_[DATETIME].json` format |
+
+---
+
+## 👩‍💻 Author
+
+**Tauane Luísa Silva** — [LinkedIn](https://www.linkedin.com/in/tauane-silva-62ba85339/) · [GitHub](https://github.com/Tauanelsilva)
